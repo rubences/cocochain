@@ -1,0 +1,79 @@
+
+========================================================================
+HIGHWAY SCENARIO ANALYSIS REPORT
+CoCoChain vs PBFT Performance Comparison
+========================================================================
+
+Simulation Configuration:
+- Topology: 20 km linear highway with 5 RSUs
+- RSU Coverage: 1 km each with 500m overlap
+- Vehicles: 200 vehicles at 100-130 km/h
+- Transaction Rate: 1 transaction per vehicle every 2 seconds
+- Simulation Time: 600 seconds
+- Repetitions: 10
+
+========================================================================
+AUTHENTICATION LATENCY DURING HANDOVERS
+========================================================================
+
+CoCoChain:  2.77 ms ± 0.92 ms
+PBFT:       25.42 ms ± 4.42 ms
+
+Improvement: 89.1% faster with CoCoChain
+
+========================================================================
+HANDOVER SUCCESS RATE (HSR)
+========================================================================
+
+CoCoChain:  95.0% ± 1.7%
+PBFT:       88.5% ± 3.2%
+
+Improvement: 6.6 percentage points higher with CoCoChain
+
+========================================================================
+THROUGHPUT (Transactions per second)
+========================================================================
+
+CoCoChain:  24.9 tx/s ± 3.0 tx/s
+PBFT:       17.9 tx/s ± 4.3 tx/s
+
+Improvement: 38.9% higher throughput with CoCoChain
+
+========================================================================
+SPEED ANALYSIS (CoCoChain only)
+========================================================================
+100 km/h:  HSR = 94.6%, Latency = 3.25 ms
+110 km/h:  HSR = 93.9%, Latency = 3.18 ms
+120 km/h:  HSR = 92.4%, Latency = 3.10 ms
+130 km/h:  HSR = 92.8%, Latency = 3.54 ms
+
+========================================================================
+CONCLUSIONS
+========================================================================
+
+1. CoCoChain demonstrates significantly lower authentication latency
+   during handovers compared to PBFT, crucial for high-speed vehicles.
+
+2. Higher handover success rates with CoCoChain indicate better
+   reliability in dynamic highway environments.
+
+3. Superior throughput performance enables handling more transactions
+   in dense vehicular networks.
+
+4. Performance degrades gracefully with increasing vehicle speeds,
+   maintaining acceptable handover success rates even at 130 km/h.
+
+========================================================================
+FILES GENERATED
+========================================================================
+
+Visualizations:
+- authentication_latency_boxplot.eps/png
+- handover_success_rate_vs_speed.eps/png
+
+Data Export:
+- authentication_latencies.csv
+- handover_success_rates.csv
+- summary_statistics.csv
+
+========================================================================
