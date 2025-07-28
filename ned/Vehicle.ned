@@ -1,5 +1,5 @@
 //
-// Vehicle Node Definition for CoCoChain
+// Vehicle Node Definition for Highway CoCoChain Scenario
 //
 
 package cocochain.nodes;
@@ -16,7 +16,7 @@ module Vehicle
     parameters:
         int numApps = default(1);
         bool hasUdp = default(true);
-        mobility.typename = default("RandomWaypointMobility");
+        mobility.typename = default("LinearMobility");  // Highway mobility
         
         @display("i=device/car");
         @networkNode();

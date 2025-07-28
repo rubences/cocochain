@@ -1,9 +1,9 @@
 #
-# CoCoChain Makefile
+# CoCoChain Highway Scenario Makefile
 #
 
 # OMNeT++ configuration
-OMNETPP_ROOT ?= $(shell readlink -f $$(which omnetpp-config | head -1 | sed 's|/bin/omnetpp-config||'))
+OMNETPP_ROOT ?= $(shell readlink -f $$(which omnetpp-config 2>/dev/null | head -1 | sed 's|/bin/omnetpp-config||') 2>/dev/null || echo "/usr")
 CONFIGFILE = $(OMNETPP_ROOT)/Makefile.inc
 ifneq ("$(wildcard $(CONFIGFILE))","")
 include $(CONFIGFILE)
@@ -14,7 +14,7 @@ TARGET = CoCoChain
 SRCDIR = src
 NEDDIR = ned
 
-# Source files
+# Source files (include new highway scenario files)
 SOURCES = $(wildcard $(SRCDIR)/*.cc) $(wildcard $(SRCDIR)/*.cpp)
 HEADERS = $(wildcard $(SRCDIR)/*.h) $(wildcard $(SRCDIR)/*.hpp)
 
@@ -24,8 +24,8 @@ CXXFLAGS += -std=c++17 -Wall -Wextra
 # Include paths
 INCLUDE_PATH += -I$(SRCDIR)
 
-# Dependencies
-LIBS += -linet$(D)
+# Dependencies - using simplified version for compatibility
+LIBS += -lm
 
 # Veins support (optional)
 ifdef VEINS_ROOT
@@ -33,20 +33,38 @@ INCLUDE_PATH += -I$(VEINS_ROOT)/src
 LIBS += -lveins$(D)
 endif
 
+# INET support (optional)  
+ifdef INET_ROOT
+INCLUDE_PATH += -I$(INET_ROOT)/src
+LIBS += -linet$(D)
+endif
+
 # Build targets
 all: $(TARGET)
 
 $(TARGET): $(SOURCES) $(HEADERS)
-	@echo "Building $(TARGET)..."
+	@echo "Building $(TARGET) for highway scenario..."
+	@echo "Sources: $(SOURCES)"
 	$(CXX) $(CXXFLAGS) $(INCLUDE_PATH) -o $@ $(SOURCES) $(LDFLAGS) $(LIBS)
 
 clean:
-	rm -f $(TARGET) *.o *_m.cc *_m.h results/*
+	rm -f $(TARGET) *.o *_m.cc *_m.h
+	rm -rf results/*
 
-run: $(TARGET)
+# Run highway scenario
+run-highway: $(TARGET)
+	./run_highway_simulation.sh
+
+# Run original urban scenario
+run-urban: $(TARGET)
 	cd simulations && ../$(TARGET) -u Cmdenv -c General --repeat=10
 
-analyze:
-	cd scripts && python3 analyze_results.py
+# Analyze highway results
+analyze-highway:
+	cd scripts && python3 analyze_highway.py
 
-.PHONY: all clean run analyze
+# Quick test without OMNeT++
+test:
+	cd scripts && python3 test_cocochain.py
+
+.PHONY: all clean run-highway run-urban analyze-highway test
