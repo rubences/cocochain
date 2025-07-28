@@ -1,0 +1,39 @@
+# Build artifacts
+CoCoChain
+*.o
+*.so
+*.a
+*_m.cc
+*_m.h
+
+# Results
+results/*.sca
+results/*.vec
+results/*.vci
+results/*.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OMNeT++
+.nedfolders
+.oppbuildspec
+.qtenvrc
