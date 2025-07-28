@@ -50,6 +50,10 @@ class CoCoChainNode:
         self.latencies = []
         self.messages_sent = 0
         self.malformed_detected = 0
+        self.false_positives = 0
+        self.total_valid_transactions = 0
+        self.throughput = 0
+        self.last_throughput_time = 0.0
         
         # Parameters
         self.bft_threshold = 0.67
@@ -106,7 +110,35 @@ class CoCoChainNode:
         if any(abs(val) > 5.0 for val in cv_data):
             return False
         
+        # Cosine similarity check (simplified) - only for top-k concepts
+        if any(abs(val) > 0.8 for val in cv_data):  # Only check top-k concepts
+            reference_vector = [0.5] * 10  # Better reference vector
+            similarity = self.calculate_cosine_similarity(cv_data, reference_vector)
+            if similarity < 0.2:  # θ = 0.2
+                # Check if this is a false positive
+                if not tx.concept_vector.is_corrupted:
+                    self.false_positives += 1
+                return False
+        
+        # If transaction passes all checks and is not corrupted
+        if not tx.concept_vector.is_corrupted:
+            self.total_valid_transactions += 1
+        
         return True
+    
+    def calculate_cosine_similarity(self, a: List[float], b: List[float]) -> float:
+        """Calculate cosine similarity between two vectors"""
+        if len(a) != len(b):
+            return 0.0
+        
+        dot_product = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        
+        return dot_product / (norm_a * norm_b)
 
     def create_transaction(self) -> Transaction:
         """Create a new transaction"""
@@ -243,11 +275,25 @@ class CoCoChainNetwork:
         all_latencies = []
         total_malformed = 0
         total_confirmed = 0
+        total_false_positives = 0
+        total_valid_transactions = 0
         
         for node in self.nodes:
             all_latencies.extend(node.latencies)
             total_malformed += node.malformed_detected
             total_confirmed += len(node.confirmed_transactions)
+            total_false_positives += node.false_positives
+            total_valid_transactions += node.total_valid_transactions
+        
+        # Calculate FPR
+        if total_valid_transactions + total_false_positives > 0:
+            fpr = (total_false_positives / (total_valid_transactions + total_false_positives)) * 100
+        else:
+            fpr = 0.0
+        
+        # Estimate throughput (transactions per second)
+        simulation_time = 50 * 0.001  # rounds * sleep_time
+        throughput = total_confirmed / simulation_time if simulation_time > 0 else 0
         
         return {
             'avg_latency': np.mean(all_latencies) if all_latencies else 0,
@@ -255,6 +301,8 @@ class CoCoChainNetwork:
             'total_overhead': self.total_messages,
             'malformed_detected': total_malformed,
             'confirmed_transactions': total_confirmed,
+            'false_positive_rate': fpr,
+            'throughput': throughput,
             'num_nodes': len(self.nodes)
         }
 
@@ -286,16 +334,22 @@ def main():
         metrics = run_simulation(num_nodes=100, rounds=50, seed=seed)
         results.append(metrics)
         print(f"Seed {seed}: Latency={metrics['avg_latency']:.4f}s, "
+              f"Throughput={metrics['throughput']:.1f}tx/s, "
               f"Overhead={metrics['total_overhead']}, "
-              f"Malformed={metrics['malformed_detected']}")
+              f"DMC={metrics['malformed_detected']}, "
+              f"FPR={metrics['false_positive_rate']:.1f}%")
     
     # Calculate averages
     avg_latency = np.mean([r['avg_latency'] for r in results])
     std_latency = np.std([r['avg_latency'] for r in results])
+    avg_throughput = np.mean([r['throughput'] for r in results])
+    std_throughput = np.std([r['throughput'] for r in results])
     avg_overhead = np.mean([r['total_overhead'] for r in results])
     std_overhead = np.std([r['total_overhead'] for r in results])
     avg_malformed = np.mean([r['malformed_detected'] for r in results])
     std_malformed = np.std([r['malformed_detected'] for r in results])
+    avg_fpr = np.mean([r['false_positive_rate'] for r in results])
+    std_fpr = np.std([r['false_positive_rate'] for r in results])
     
     print("\n" + "=" * 50)
     print("CoCoChain Test Results Summary")
@@ -303,8 +357,10 @@ def main():
     print(f"{'Metric':<30} {'Mean':<12} {'Std Dev':<12}")
     print("-" * 54)
     print(f"{'End-to-end latency (s)':<30} {avg_latency:<12.4f} {std_latency:<12.4f}")
+    print(f"{'Throughput (tx/s)':<30} {avg_throughput:<12.1f} {std_throughput:<12.1f}")
     print(f"{'Consensus overhead (msgs)':<30} {avg_overhead:<12.0f} {std_overhead:<12.0f}")
-    print(f"{'Malformed detected':<30} {avg_malformed:<12.0f} {std_malformed:<12.0f}")
+    print(f"{'DMC (count)':<30} {avg_malformed:<12.0f} {std_malformed:<12.0f}")
+    print(f"{'FPR (%)':<30} {avg_fpr:<12.1f} {std_fpr:<12.1f}")
     print("\nSimulation validation completed successfully!")
 
 if __name__ == "__main__":

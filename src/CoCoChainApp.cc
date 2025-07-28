@@ -20,6 +20,10 @@ CoCoChainApp::CoCoChainApp() :
     transactionCounter(0),
     totalMessagesReceived(0),
     totalMalformedDetected(0),
+    totalFalsePositives(0),
+    totalValidTransactions(0),
+    totalThroughput(0),
+    lastThroughputUpdate(0),
     corruptionDist(0.0, 1.0),
     conceptDist(0.0, 1.0)
 {
@@ -41,6 +45,8 @@ void CoCoChainApp::initialize(int stage)
         bftThreshold = par("bftThreshold").doubleValue();
         semanticVerification = par("semanticVerification");
         maxTransactionAge = par("maxTransactionAge");
+        cosineSimilarityThreshold = par("cosineSimilarityThreshold").doubleValue();
+        enablePbftComparison = par("enablePbftComparison").boolValue();
         
         // Initialize random number generator
         int seed = getRNG(0)->intRand();
@@ -50,6 +56,8 @@ void CoCoChainApp::initialize(int stage)
         endToEndLatencySignal = registerSignal("endToEndLatency");
         consensusOverheadSignal = registerSignal("consensusOverhead");
         malformedDetectedSignal = registerSignal("malformedDetected");
+        falsePositiveRateSignal = registerSignal("falsePositiveRate");
+        throughputSignal = registerSignal("throughput");
         
         // Determine if this node is adversarial (10% of nodes)
         if (corruptionDist(rng) < corruptionProbability) {
@@ -148,6 +156,10 @@ void CoCoChainApp::sendTransaction()
     // Record start time for latency measurement
     transactionStartTimes[tx.id] = simTime();
     
+    // Update throughput metrics
+    totalThroughput++;
+    updateThroughputMetrics();
+    
     // Broadcast transaction
     std::ostringstream oss;
     oss << "TRANSACTION:" << tx.id << " " << tx.originator << " " << tx.timestamp;
@@ -174,11 +186,16 @@ void CoCoChainApp::processReceivedTransaction(const Transaction& tx)
         return;
     }
     
-    // Verify semantic integrity
-    bool isValid = verifySemanticIntegrity(tx);
-    if (!isValid) {
-        totalMalformedDetected++;
-        emit(malformedDetectedSignal, 1);
+    // Process with both PBFT and CoCoChain if comparison is enabled
+    bool cocoChainResult = processCocoChainConsensus(tx);
+    
+    if (enablePbftComparison) {
+        bool pbftResult = processPbftConsensus(tx);
+        EV_INFO << "Transaction " << tx.id << " - PBFT: " << pbftResult 
+                << ", CoCoChain: " << cocoChainResult << endl;
+    }
+    
+    if (!cocoChainResult) {
         EV_INFO << "Detected and rejected malformed transaction " << tx.id << endl;
         return;
     }
@@ -336,6 +353,16 @@ bool CoCoChainApp::verifySemanticIntegrity(const Transaction& tx)
         if (variance > 2.0) {
             isValid = false;
         }
+        
+        // Additional cosine similarity check for top-k concepts
+        if (isValid && isTopKConcept(tx.conceptVector)) {
+            ConceptVector refVector = generateConceptVector();
+            double similarity = calculateCosineSimilarity(tx.conceptVector.data, refVector.data);
+            
+            if (similarity < cosineSimilarityThreshold) {
+                isValid = false;
+            }
+        }
     }
     
     return isValid;
@@ -349,11 +376,147 @@ bool CoCoChainApp::isAdversarialNode()
 void CoCoChainApp::injectMalformedVector(ConceptVector& cv)
 {
     corruptConceptVector(cv);
-    // Additional malicious modifications
+    // Additional malicious modifications for top-k concept manipulation
     if (uniform(0, 1) < 0.5) {
         // Inject extreme values
         int idx = intuniform(0, cv.data.size() - 1);
         cv.data[idx] = uniform(-10, 10);
+    }
+    
+    // Mark as top-k manipulation if appropriate
+    if (uniform(0, 1) < 0.3) {
+        cv.isTopK = true;
+        manipulateTopKVector(cv);
+    }
+}
+
+double CoCoChainApp::calculateCosineSimilarity(const std::vector<double>& a, const std::vector<double>& b)
+{
+    if (a.size() != b.size()) return 0.0;
+    
+    double dotProduct = 0.0;
+    double normA = 0.0;
+    double normB = 0.0;
+    
+    for (size_t i = 0; i < a.size(); i++) {
+        dotProduct += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    
+    if (normA == 0.0 || normB == 0.0) return 0.0;
+    
+    return dotProduct / (sqrt(normA) * sqrt(normB));
+}
+
+bool CoCoChainApp::isTopKConcept(const ConceptVector& cv)
+{
+    // Check if concept vector represents a top-k concept
+    // For simplicity, we consider it top-k if any dimension exceeds threshold
+    for (const auto& val : cv.data) {
+        if (abs(val) > 0.8) return true;
+    }
+    return cv.isTopK;
+}
+
+void CoCoChainApp::manipulateTopKVector(ConceptVector& cv)
+{
+    // Adversaries inject manipulated top-k concept vectors
+    cv.isTopK = true;
+    cv.isCorrupted = true;
+    
+    // Find the highest value and manipulate it
+    auto maxIt = std::max_element(cv.data.begin(), cv.data.end());
+    if (maxIt != cv.data.end()) {
+        *maxIt = *maxIt * uniform(1.5, 3.0); // Amplify the top concept
+    }
+    
+    // Add subtle noise to other dimensions
+    for (auto& val : cv.data) {
+        if (&val != &(*maxIt)) {
+            val += uniform(-0.1, 0.1);
+        }
+    }
+}
+
+bool CoCoChainApp::processPbftConsensus(const Transaction& tx)
+{
+    // Simplified PBFT consensus simulation
+    // In real PBFT: Pre-prepare, Prepare, Commit phases
+    
+    // Basic verification without semantic checking
+    bool isValid = !tx.conceptVector.isCorrupted;
+    
+    // PBFT requires 2f+1 nodes for f faulty nodes
+    // Assume 1/3 can be faulty, so need 2/3 agreement
+    double pbftThreshold = 0.67;
+    
+    // Simulate consensus with basic checks
+    if (uniform(0, 1) < pbftThreshold) {
+        return isValid;
+    }
+    
+    return false;
+}
+
+bool CoCoChainApp::processCocoChainConsensus(const Transaction& tx)
+{
+    // CoCoChain consensus with semantic verification
+    if (!verifySemanticIntegrity(tx)) {
+        return false;
+    }
+    
+    // Additional cosine similarity check for top-k concepts
+    if (isTopKConcept(tx.conceptVector)) {
+        // Generate reference vector for comparison
+        ConceptVector refVector = generateConceptVector();
+        double similarity = calculateCosineSimilarity(tx.conceptVector.data, refVector.data);
+        
+        if (similarity < cosineSimilarityThreshold) {
+            // Mark as potential false positive if it's actually valid
+            if (!tx.conceptVector.isCorrupted) {
+                totalFalsePositives++;
+                updateFalsePositiveRate(true, true);
+            }
+            return false;
+        }
+    }
+    
+    // Update metrics
+    if (tx.conceptVector.isCorrupted) {
+        totalMalformedDetected++;
+        emit(malformedDetectedSignal, 1);
+    } else {
+        totalValidTransactions++;
+        updateFalsePositiveRate(true, false);
+    }
+    
+    return true;
+}
+
+void CoCoChainApp::updateThroughputMetrics()
+{
+    simtime_t currentTime = simTime();
+    if (currentTime - lastThroughputUpdate >= 1.0) { // Update every second
+        emit(throughputSignal, totalThroughput);
+        totalThroughput = 0;
+        lastThroughputUpdate = currentTime;
+    }
+}
+
+void CoCoChainApp::updateFalsePositiveRate(bool wasValid, bool wasRejected)
+{
+    // FPR = False Positives / (False Positives + True Negatives)
+    // False Positive: Valid transaction incorrectly rejected
+    if (wasValid && wasRejected) {
+        totalFalsePositives++;
+    }
+    
+    // Calculate and emit FPR periodically
+    if ((totalValidTransactions + totalMalformedDetected) > 0) {
+        double fpr = static_cast<double>(totalFalsePositives) / 
+                    static_cast<double>(totalValidTransactions + totalFalsePositives);
+        emit(falsePositiveRateSignal, fpr);
     }
 }
 
@@ -367,7 +530,16 @@ void CoCoChainApp::finish()
     // Record final statistics
     recordScalar("Total messages received", totalMessagesReceived);
     recordScalar("Total malformed detected", totalMalformedDetected);
+    recordScalar("Total false positives", totalFalsePositives);
+    recordScalar("Total valid transactions", totalValidTransactions);
     recordScalar("Confirmed transactions", confirmedTransactions.size());
+    
+    // Calculate final FPR
+    if ((totalValidTransactions + totalFalsePositives) > 0) {
+        double finalFpr = static_cast<double>(totalFalsePositives) / 
+                         static_cast<double>(totalValidTransactions + totalFalsePositives);
+        recordScalar("Final FPR", finalFpr);
+    }
     
     ApplicationBase::finish();
 }

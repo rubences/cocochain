@@ -23,8 +23,9 @@ struct ConceptVector {
     uint64_t timestamp;
     int nodeId;
     bool isCorrupted;
+    bool isTopK;  // Indicates if this is a top-k concept vector
     
-    ConceptVector() : timestamp(0), nodeId(-1), isCorrupted(false) {}
+    ConceptVector() : timestamp(0), nodeId(-1), isCorrupted(false), isTopK(false) {}
 };
 
 struct Transaction {
@@ -57,6 +58,8 @@ private:
     double bftThreshold;
     bool semanticVerification;
     simtime_t maxTransactionAge;
+    double cosineSimilarityThreshold;  // θ = 0.2
+    bool enablePbftComparison;
     
     // Network
     UdpSocket socket;
@@ -72,11 +75,17 @@ private:
     simsignal_t endToEndLatencySignal;
     simsignal_t consensusOverheadSignal;
     simsignal_t malformedDetectedSignal;
+    simsignal_t falsePositiveRateSignal;
+    simsignal_t throughputSignal;
     
     // Metrics tracking
     std::map<uint64_t, simtime_t> transactionStartTimes;
     int totalMessagesReceived;
     int totalMalformedDetected;
+    int totalFalsePositives;
+    int totalValidTransactions;
+    int totalThroughput;
+    simtime_t lastThroughputUpdate;
     
     // Random number generation
     std::mt19937 rng;
@@ -109,14 +118,23 @@ protected:
     void corruptConceptVector(ConceptVector& cv);
     std::string computeSemanticDigest(const ConceptVector& cv);
     bool verifySemanticIntegrity(const Transaction& tx);
+    double calculateCosineSimilarity(const std::vector<double>& a, const std::vector<double>& b);
+    bool isTopKConcept(const ConceptVector& cv);
     
     // Adversarial behavior
     bool isAdversarialNode();
     void injectMalformedVector(ConceptVector& cv);
+    void manipulateTopKVector(ConceptVector& cv);
+    
+    // PBFT vs CoCoChain comparison
+    bool processPbftConsensus(const Transaction& tx);
+    bool processCocoChainConsensus(const Transaction& tx);
     
     // Utilities
     void scheduleNextMessage();
     void recordMetrics(const Transaction& tx);
+    void updateThroughputMetrics();
+    void updateFalsePositiveRate(bool wasValid, bool wasRejected);
     
 public:
     CoCoChainApp();
